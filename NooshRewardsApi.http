@@ -1,0 +1,6 @@
+@NooshRewardsApi_HostAddress = http://localhost:5148
+
+GET {{NooshRewardsApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

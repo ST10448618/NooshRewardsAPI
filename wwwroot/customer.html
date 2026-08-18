@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Noosh Rewards — Customer</title>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 480px; margin: 2rem auto; padding: 0 1rem; background: #FFC72C; }
+        h1 { font-size: 1.5rem; }
+        h3 { margin-top: 0; }
+        .card { background: white; border: 2px solid #111; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+        label { display: block; font-weight: bold; margin-top: 1rem; margin-bottom: 0.3rem; }
+        input, select { width: 100%; padding: 0.6rem; border: 2px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+        button { width: 100%; padding: 0.8rem; margin-top: 1.2rem; background: #111; color: #FFC72C; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; font-size: 1rem; }
+        .tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+        .tab-btn { flex: 1; padding: 0.6rem; border: 2px solid #111; background: white; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .tab-btn.active { background: #111; color: #FFC72C; }
+        .hidden { display: none; }
+        #qrResult { text-align: center; margin-top: 1rem; }
+        #qrResult img { max-width: 220px; border: 2px solid #111; border-radius: 8px; }
+        .status { padding: 0.8rem; border-radius: 6px; margin-top: 1rem; font-weight: bold; }
+        .status.success { background: #E7F5E6; color: #1a5c1a; }
+        .status.error { background: #F4CCCC; color: #a30000; }
+        .progress-text { text-align: center; font-size: 1.1rem; margin-top: 0.5rem; }
+        .logged-in-banner { font-size: 0.85rem; color: #1a5c1a; background: #E7F5E6; padding: 0.5rem 0.8rem; border-radius: 6px; margin-bottom: 1rem; }
+    </style>
+</head>
+<body>
+    <h1>🌯 Noosh Rewards — Test Customer View</h1>
+
+    <!-- LOGIN CARD -->
+    <div id="loginSection" class="card">
+        <h3>Login</h3>
+        <label>Phone Number (use a Firebase test number)</label>
+        <input type="text" id="loginPhone" placeholder="+27821234567" />
+        <div id="recaptcha-container" style="margin-top: 1rem;"></div>
+        <button id="sendCodeBtn">Send Code</button>
+
+        <div id="codeEntry" class="hidden">
+            <label>Verification Code</label>
+            <input type="text" id="loginCode" placeholder="123456" />
+            <button id="verifyCodeBtn">Verify &amp; Login</button>
+        </div>
+    </div>
+
+    <!-- REWARDS CARD (hidden until logged in) -->
+    <div id="rewardsSection" class="hidden">
+        <div class="logged-in-banner" id="loggedInBanner"></div>
+
+        <div class="card">
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="qr">Get QR Code</button>
+                <button class="tab-btn" data-tab="receipt">Enter Receipt</button>
+            </div>
+
+            <label>Reward</label>
+            <select id="rewardSelect"></select>
+
+            <label>Full Name (optional)</label>
+            <input type="text" id="fullName" placeholder="Test Customer" />
+
+            <!-- QR tab -->
+            <div id="qrTab">
+                <button id="generateQrBtn">Generate QR Code</button>
+                <div id="qrResult"></div>
+            </div>
+
+            <!-- Receipt tab -->
+            <div id="receiptTab" class="hidden">
+                <label>Receipt Reference Number</label>
+                <input type="text" id="receiptReference" placeholder="e.g. 1042" />
+                <label>Amount Paid (R)</label>
+                <input type="number" id="amountPaid" step="0.01" placeholder="150.00" />
+                <label>Purchase Date</label>
+                <input type="date" id="purchaseDate" />
+                <button id="submitReceiptBtn">Submit Receipt</button>
+            </div>
+
+            <div id="statusBox"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5148'; // ⚠ update to match your actual dotnet run URL
+
+        // ⚠ Replace with your real values from
+        // Firebase Console → Project Settings → General → Your apps → Web app
+        const firebaseConfig = {
+            apiKey: "AIzaSyCYdySG6k280Vqo7kJY-Ujwz7-1UEop84I",
+            authDomain: "nooshapp-d4c39.firebaseapp.com",
+            projectId: "nooshapp-d4c39"
+        };
+        firebase.initializeApp(firebaseConfig);
+
+        let confirmationResult = null;
+        let idToken = null;
+
+        const recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', { size: 'normal' });
+
+        document.getElementById('sendCodeBtn').addEventListener('click', async () => {
+            const phone = document.getElementById('loginPhone').value.trim();
+            try {
+                confirmationResult = await firebase.auth().signInWithPhoneNumber(phone, recaptchaVerifier);
+                document.getElementById('codeEntry').classList.remove('hidden');
+            } catch (err) {
+                alert('Failed to send code: ' + err.message);
+            }
+        });
+
+        document.getElementById('verifyCodeBtn').addEventListener('click', async () => {
+            const code = document.getElementById('loginCode').value.trim();
+            try {
+                const result = await confirmationResult.confirm(code);
+                idToken = await result.user.getIdToken();
+
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('rewardsSection').classList.remove('hidden');
+                document.getElementById('loggedInBanner').textContent =
+                    `✓ Logged in as ${result.user.phoneNumber}`;
+
+                loadRewardRules();
+            } catch (err) {
+                alert('Invalid code: ' + err.message);
+            }
+        });
+
+        // ---------- Everything below only runs once logged in ----------
+
+        const rewardSelect = document.getElementById('rewardSelect');
+        const statusBox = document.getElementById('statusBox');
+
+        async function loadRewardRules() {
+            const res = await fetch(`${API_BASE}/api/reward-rules`);
+            const rules = await res.json();
+            rewardSelect.innerHTML = rules.map(r =>
+                `<option value="${r.id}">${r.name} (${r.rewardDescription})</option>`
+            ).join('');
+        }
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById('qrTab').classList.toggle('hidden', btn.dataset.tab !== 'qr');
+                document.getElementById('receiptTab').classList.toggle('hidden', btn.dataset.tab !== 'receipt');
+                statusBox.innerHTML = '';
+            });
+        });
+
+        function showStatus(result) {
+            const cls = result.success ? 'success' : 'error';
+            let html = `<div class="status ${cls}">${result.message}</div>`;
+            if (result.success && typeof result.currentPunches === 'number') {
+                html += `<div class="progress-text">${result.currentPunches} / ${result.requiredPunches} punches</div>`;
+            }
+            statusBox.innerHTML = html;
+        }
+
+        document.getElementById('generateQrBtn').addEventListener('click', async () => {
+            const body = {
+                fullName: document.getElementById('fullName').value,
+                rewardRuleId: parseInt(rewardSelect.value)
+            };
+
+            const res = await fetch(`${API_BASE}/api/rewards/generate-qr`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${idToken}`
+                },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+
+            if (res.status === 401) {
+                showStatus({ success: false, message: data.message || 'Not authorized.' });
+                return;
+            }
+
+            document.getElementById('qrResult').innerHTML = `
+                <img src="${data.qrImageDataUrl}" alt="QR Code" />
+                <p style="font-size:0.8rem;color:#666;">Show this to staff — expires in 2 minutes</p>
+            `;
+            statusBox.innerHTML = '';
+        });
+
+        document.getElementById('submitReceiptBtn').addEventListener('click', async () => {
+            const body = {
+                fullName: document.getElementById('fullName').value,
+                rewardRuleId: parseInt(rewardSelect.value),
+                receiptReference: document.getElementById('receiptReference').value,
+                amountPaid: parseFloat(document.getElementById('amountPaid').value),
+                purchaseDate: document.getElementById('purchaseDate').value
+            };
+
+            const res = await fetch(`${API_BASE}/api/rewards/submit-receipt`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${idToken}`
+                },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            showStatus(data);
+        });
+    </script>
+</body>
+</html>
